@@ -1,0 +1,15 @@
+# 设置默认行为
+* text=auto
+
+# 源代码文件
+*.py text
+*.bat text eol=crlf
+*.iss text eol=crlf
+
+# 文档
+*.md text
+*.txt text
+
+# 二进制文件
+*.ico binary
+*.exe binary 
