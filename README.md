@@ -21,3 +21,7 @@ Tibasepath 是一个文件监控和处理工具，主要用于监控指定文件
 ## 安装步骤
 
 1. 克隆仓库：
+2. windows 下安装python
+3. 安装ISCC
+4. 运行build.bat
+5. 
