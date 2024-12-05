@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QSystemTrayIcon, QMenu, QAction)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QIcon, QFont
+from single_instance import SingleInstance
 
 class FileHandler(FileSystemEventHandler):
     def __init__(self, source_path, target_path):
@@ -53,7 +54,7 @@ class FileHandler(FileSystemEventHandler):
             if event.is_directory:
                 return
                 
-            # 忽略临时文件
+            # 略临时文件
             if file_path.endswith('.tmp'):
                 return
                 
@@ -223,6 +224,8 @@ class TibasepathGUI(QMainWindow):
         # 开始监控（如果配置有效）
         if config_valid:
             self.start_monitoring()
+            # 立即处理源文件夹中的现有文件
+            self.process_existing_files()
         else:
             logging.warning("请在设置中配置有效的源文件夹和目标文件夹")
             self.status_label.setText("请配置目录")
@@ -473,7 +476,7 @@ class TibasepathGUI(QMainWindow):
             
             # 重启监控
             self.restart_monitoring()
-            QMessageBox.information(self, "成功", "设置已保存，监控��启动")
+            QMessageBox.information(self, "成功", "设置已保存，监控已启动")
             return True
             
         except Exception as e:
@@ -485,15 +488,22 @@ class TibasepathGUI(QMainWindow):
         source_path = self.config['Paths'].get('source', '')
         target_path = self.config['Paths'].get('target', '')
         
-        logging.info(f"开始监控 - 源目录: {source_path}")
-        logging.info(f"开始监控 - 目标目录: {target_path}")
-        
         if not source_path or not target_path:
-            logging.warning("源目录或目标目录未设置，请在设置中配置目录")
-            self.status_label.setText("未设置目录")
-            self.status_label.setStyleSheet("color: orange")
+            logging.warning("源目录或目标目录未设置")
             return
-        
+            
+        if not os.path.exists(source_path):
+            logging.warning(f"源目录不存在: {source_path}")
+            return
+            
+        if not os.path.exists(target_path):
+            try:
+                os.makedirs(target_path)
+                logging.info(f"创建目标目录: {target_path}")
+            except Exception as e:
+                logging.error(f"创建目标目录失败: {str(e)}")
+                return
+
         try:
             # 如果没有事件处理器，创建一个
             if not self.event_handler:
@@ -618,9 +628,76 @@ class TibasepathGUI(QMainWindow):
         event.ignore()
         self.hide()
 
+    def set_startup(self, enable=True):
+        """设置开机自启动"""
+        try:
+            import winreg
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+            
+            # 打开注册表项
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                key_path,
+                0,
+                winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE
+            )
+            
+            app_name = "Tibasepath"
+            exe_path = sys.executable
+            
+            try:
+                # 检查是否已经存在
+                existing_path = winreg.QueryValueEx(key, app_name)[0]
+                if existing_path == exe_path and enable:
+                    return  # 已经存在且路径相同，无需操作
+            except WindowsError:
+                pass  # 键不存在，继续添加
+            
+            if enable:
+                # 添加到启动项
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+                logging.info(f"已添加到开机启动项: {exe_path}")
+            else:
+                # 从启动项移除
+                try:
+                    winreg.DeleteValue(key, app_name)
+                    logging.info("已从开机启动项移除")
+                except WindowsError:
+                    pass
+                
+        except Exception as e:
+            logging.error(f"设置开机自启动失败: {str(e)}")
+        finally:
+            try:
+                winreg.CloseKey(key)
+            except:
+                pass
+
+    def process_existing_files(self):
+        """处理源文件夹中的现有文件"""
+        try:
+            source_path = self.config['Paths'].get('source', '')
+            if not source_path or not os.path.exists(source_path):
+                return
+                
+            logging.info(f"检查源文件夹中的现有文件: {source_path}")
+            for filename in os.listdir(source_path):
+                if filename.lower().endswith('.utf8'):
+                    file_path = os.path.join(source_path, filename)
+                    if os.path.isfile(file_path):
+                        logging.info(f"处理现有文件: {filename}")
+                        if self.event_handler:
+                            self.event_handler.process_file(file_path)
+                            
+        except Exception as e:
+            logging.error(f"处理现有文件时出错: {str(e)}", exc_info=True)
+
 def main():
+    # 在主函数开始时添加单实例检查
+    single_instance = SingleInstance()
+    
     app = QApplication(sys.argv)
-    app.setStyle('Fusion')  # 使用 Fusion 风格
+    app.setStyle('Fusion')
     window = TibasepathGUI()
     window.show()
     sys.exit(app.exec_())
